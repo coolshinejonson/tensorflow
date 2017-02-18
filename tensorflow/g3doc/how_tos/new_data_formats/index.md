@@ -39,7 +39,7 @@ are in their constructors.  The most important method is `read`.
 It takes a queue argument, which is where it gets filenames to
 read from whenever it needs one (e.g. when the `read` op first runs, or
 the previous `read` reads the last record from a file).  It produces
-two scalar tensors: a string key and and a string value.
+two scalar tensors: a string key and a string value.
 
 To create a new reader called `SomeReader`, you will need to:
 
@@ -182,7 +182,7 @@ class SomeReader(io_ops.ReaderBase):
         super(SomeReader, self).__init__(rr)
 
 
-ops.NoGradient("SomeReader")
+ops.NotDifferentiable("SomeReader")
 ops.RegisterShape("SomeReader")(common_shapes.scalar_shape)
 ```
 
@@ -211,8 +211,8 @@ format.  For example, you may have an image saved as a string in
 Depending on the format of that image, you might take the corresponding output
 from a
 [`tf.parse_single_example`](../../api_docs/python/io_ops.md#parse_single_example)
-op and call [`tf.decode_jpeg`](../../api_docs/python/image.md#decode_jpeg),
-[`tf.decode_png`](../../api_docs/python/image.md#decode_png), or
+op and call [`tf.image.decode_jpeg`](../../api_docs/python/image.md#decode_jpeg),
+[`tf.image.decode_png`](../../api_docs/python/image.md#decode_png), or
 [`tf.decode_raw`](../../api_docs/python/io_ops.md#decode_raw).  It is common to
 take the output of `tf.decode_raw` and use
 [`tf.slice`](../../api_docs/python/array_ops.md#slice) and

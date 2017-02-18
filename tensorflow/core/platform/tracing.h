@@ -1,4 +1,4 @@
-/* Copyright 2015 Google Inc. All Rights Reserved.
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ limitations under the License.
 #include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/platform/macros.h"
 #include "tensorflow/core/platform/mutex.h"
+#include "tensorflow/core/platform/platform.h"
 #include "tensorflow/core/platform/types.h"
 
 namespace tensorflow {
@@ -36,7 +37,7 @@ class Tracing {
  public:
   // This enumeration contains the identifiers of all TensorFlow
   // threadscape events and code regions.  Threadscape assigns its
-  // own identiers at runtime when we register our events and we
+  // own identifiers at runtime when we register our events and we
   // cannot know in advance what IDs it will choose.  The "RecordEvent"
   // method and "ScopedActivity" use these event IDs for consistency
   // and remap them to threadscape IDs at runtime.  This enum is limited
@@ -80,8 +81,10 @@ class Tracing {
     ~ScopedActivity();
 
    private:
+#if defined(PLATFORM_GOOGLE)
     const bool enabled_;
     const int32 region_id_;
+#endif
 
     TF_DISALLOW_COPY_AND_ASSIGN(ScopedActivity);
   };

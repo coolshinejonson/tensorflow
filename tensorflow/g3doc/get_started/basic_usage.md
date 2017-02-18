@@ -11,11 +11,11 @@ To use TensorFlow you need to understand how TensorFlow:
 ## Overview
 
 TensorFlow is a programming system in which you represent computations as
-graphs.  Nodes in the graph are called *ops* (short for operations).  An op
-takes zero or more `Tensors`, performs some computation, and produces zero or
-more `Tensors`.  A `Tensor` is a typed multi-dimensional array. For example,
-you can represent a  mini-batch of images as a 4-D array of floating point
-numbers with dimensions `[batch, height, width, channels]`.
+graphs. Nodes in the graph are called *ops* (short for operations). An op takes
+zero or more `Tensors`, performs some computation, and produces zero or more
+`Tensors`. In TensorFlow terminology, a `Tensor` is a typed multi-dimensional
+array. For example, you can represent a mini-batch of images as a 4-D array of
+floating point numbers with dimensions `[batch, height, width, channels]`.
 
 A TensorFlow graph is a *description* of computations.  To compute anything,
 a graph must be launched in a `Session`.  A `Session` places the graph ops onto
@@ -26,7 +26,7 @@ C++.
 
 ## The computation graph
 
-TensorFlow programs are usually structured into a construction phase, that
+TensorFlow programs are usually structured into a construction phase that
 assembles a graph, and an execution phase that uses a session to execute ops in
 the graph.
 
@@ -42,14 +42,14 @@ The session libraries have equivalent functionalities for the three languages.
 
 ### Building the graph
 
-To build a graph start with ops that do not need any input (source ops), such as
-`Constant`, and pass their output to other ops that do computation.
+To build a graph, start by defining ops that do not need any input, such as
+`constant`, and pass their output to other ops that do computation.
 
-The ops constructors in the Python library return objects that stand for the
-output of the constructed ops.  You can pass these to other ops constructors to
-use as inputs.
+The op constructors in the Python library return objects that represent the
+output of the constructed ops.  You can pass these as inputs to other op
+constructors.
 
-The TensorFlow Python library has a *default graph* to which ops constructors
+The TensorFlow Python library has a *default graph* to which op constructors
 add nodes.  The default graph is sufficient for many applications.  See the
 [Graph class](../api_docs/python/framework.md#Graph) documentation for how
 to explicitly manage multiple graphs.
@@ -57,33 +57,33 @@ to explicitly manage multiple graphs.
 ```python
 import tensorflow as tf
 
-# Create a Constant op that produces a 1x2 matrix.  The op is
+# Create a constant op that produces a 1x2 matrix.  The op is
 # added as a node to the default graph.
 #
 # The value returned by the constructor represents the output
-# of the Constant op.
+# of the constant op.
 matrix1 = tf.constant([[3., 3.]])
 
-# Create another Constant that produces a 2x1 matrix.
+# Create another constant that produces a 2x1 matrix.
 matrix2 = tf.constant([[2.],[2.]])
 
-# Create a Matmul op that takes 'matrix1' and 'matrix2' as inputs.
+# Create a matmul op that takes 'matrix1' and 'matrix2' as inputs.
 # The returned value, 'product', represents the result of the matrix
 # multiplication.
 product = tf.matmul(matrix1, matrix2)
 ```
 
-The default graph now has three nodes: two `constant()` ops and one `matmul()`
-op. To actually multiply the matrices, and get the result of the multiplication,
-you must launch the graph in a session.
+The default graph now has three nodes: two `constant` ops and one `matmul`
+op. To actually multiply the matrices and get the result of the multiplication,
+you must *launch* the graph in a `Session`.
 
 ### Launching the graph in a session
 
-Launching follows construction.  To launch a graph, create a `Session` object.
-Without arguments the session constructor launches the default graph.
-
-See the [Session class](../api_docs/python/client.md#session-management) for
-the complete session API.
+After constructing a graph, you can launch it by creating a `Session` object.
+The `Session` launches the default graph, unless a different graph is specified
+in the constructor.  See the
+[Session class](../api_docs/python/client.md#session-management) for
+the complete API.
 
 ```python
 # Launch the default graph.
@@ -96,10 +96,10 @@ sess = tf.Session()
 # All inputs needed by the op are run automatically by the session.  They
 # typically are run in parallel.
 #
-# The call 'run(product)' thus causes the execution of threes ops in the
+# The call 'run(product)' thus causes the execution of three ops in the
 # graph: the two constants and matmul.
 #
-# The output of the op is returned in 'result' as a numpy `ndarray` object.
+# The output of the matmul is returned in 'result' as a numpy `ndarray` object.
 result = sess.run(product)
 print(result)
 # ==> [[ 12.]]
@@ -108,9 +108,9 @@ print(result)
 sess.close()
 ```
 
-Sessions should be closed to release resources. You can also enter a `Session`
-with a "with" block. The `Session` closes automatically at the end of the
-`with` block.
+Sessions should be closed to release resources.  To manage resources more
+easily, use a `with` statement. Each `Session` implements a context manager that
+calls `close()` when exiting the block.
 
 ```python
 with tf.Session() as sess:
@@ -146,6 +146,35 @@ Devices are specified with strings.  The currently supported devices are:
 See [Using GPUs](../how_tos/using_gpu/index.md) for more information about GPUs
 and TensorFlow.
 
+### Launching the graph in a distributed session
+
+To create a TensorFlow cluster, launch a TensorFlow server on each of the
+machines in the cluster. When you instantiate a Session in your client, you
+pass it the network location of one of the machines in the cluster:
+
+```python
+with tf.Session("grpc://example.org:2222") as sess:
+  # Calls to sess.run(...) will be executed on the cluster.
+  ...
+```
+
+This machine becomes the master for the session. The master distributes the
+graph across other machines in the cluster (workers), much as the local
+implementation distributes the graph across available compute resources within
+a machine.
+
+You can use "with tf.device():" statements to directly specify workers for
+particular parts of the graph:
+
+```python
+with tf.device("/job:ps/task:0"):
+  weights = tf.Variable(...)
+  biases = tf.Variable(...)
+```
+
+See the [Distributed TensorFlow How To](../how_tos/distributed/) for more
+information about distributed sessions and clusters.
+
 ## Interactive Usage
 
 The Python examples in the documentation launch the graph with a
@@ -172,7 +201,7 @@ a = tf.constant([3.0, 3.0])
 x.initializer.run()
 
 # Add an op to subtract 'a' from 'x'.  Run it and print the result
-sub = tf.sub(x, a)
+sub = tf.subtract(x, a)
 print(sub.eval())
 # ==> [-2. -1.]
 
@@ -207,7 +236,7 @@ update = tf.assign(state, new_value)
 
 # Variables must be initialized by running an `init` Op after having
 # launched the graph.  We first have to add the `init` Op to the graph.
-init_op = tf.initialize_all_variables()
+init_op = tf.global_variables_initializer()
 
 # Launch the graph and run the ops.
 with tf.Session() as sess:
@@ -245,11 +274,11 @@ example we fetched the single node `state`, but you can also fetch multiple
 tensors:
 
 ```python
-input1 = tf.constant(3.0)
-input2 = tf.constant(2.0)
-input3 = tf.constant(5.0)
+input1 = tf.constant([3.0])
+input2 = tf.constant([2.0])
+input3 = tf.constant([5.0])
 intermed = tf.add(input2, input3)
-mul = tf.mul(input1, intermed)
+mul = tf.multiply(input1, intermed)
 
 with tf.Session() as sess:
   result = sess.run([mul, intermed])
@@ -278,7 +307,7 @@ tf.placeholder() to create them:
 
 input1 = tf.placeholder(tf.float32)
 input2 = tf.placeholder(tf.float32)
-output = tf.mul(input1, input2)
+output = input1 * input2
 
 with tf.Session() as sess:
   print(sess.run([output], feed_dict={input1:[7.], input2:[2.]}))
@@ -290,6 +319,6 @@ with tf.Session() as sess:
 A `placeholder()` operation generates an error if you do not supply a feed for
 it. See the
 [MNIST fully-connected feed tutorial](../tutorials/mnist/tf/index.md)
-([source code](https://www.tensorflow.org/code/tensorflow/g3doc/tutorials/mnist/fully_connected_feed.py))
+([source code](https://www.tensorflow.org/code/tensorflow/examples/tutorials/mnist/fully_connected_feed.py))
 for a larger-scale example of feeds.
 

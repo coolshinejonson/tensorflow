@@ -3,52 +3,74 @@
 
 package(default_visibility = ["//tensorflow:internal"])
 
+licenses(["notice"])  # Apache 2.0
+
+exports_files(["LICENSE"])
+
 filegroup(
-    name = "tensorboard_frontend",
+    name = "frontend",
     srcs = [
+        "TAG",
+        "dist/bazel-html-imports.html",
         "dist/index.html",
         "dist/tf-tensorboard.html",
-        "//tensorflow/tensorboard/bower:bower",
-        "TAG",
-    ] + glob(["lib/**/*"]),
-)
-
-py_library(
-    name = "tensorboard_handler",
-    srcs = ["tensorboard_handler.py"],
-    deps = [
-        ":float_wrapper",
-        "//tensorflow/python:platform",
-        "//tensorflow/python:summary",
+        "//tensorflow/tensorboard/bower",
+        "//tensorflow/tensorboard/lib:all_files",
     ],
-    srcs_version = "PY2AND3",
-)
-
-py_library(
-    name = "float_wrapper",
-    srcs = ["float_wrapper.py"],
-    srcs_version = "PY2AND3",
-)
-
-py_test(
-    name = "float_wrapper_test",
-    size = "small",
-    srcs = ["float_wrapper_test.py"],
-    deps = [
-        ":float_wrapper",
-        "//tensorflow/python:platform_test",
-    ],
-    srcs_version = "PY2AND3",
 )
 
 py_binary(
     name = "tensorboard",
-    srcs = ["tensorboard.py"],
-    data = [":tensorboard_frontend"],
-    deps = [
-        ":tensorboard_handler",
-        "//tensorflow/python:platform",
-        "//tensorflow/python:summary",
+    srcs = [
+        "__main__.py",
+        "tensorboard.py",
     ],
+    data = [":frontend"],
     srcs_version = "PY2AND3",
+    deps = [
+        "//tensorflow/python:platform",
+        "//tensorflow/tensorboard/backend:server",
+    ],
+)
+
+filegroup(
+    name = "all_files",
+    srcs = glob(
+        ["**/*"],
+        exclude = [
+            "**/METADATA",
+            "**/OWNERS",
+            "**/node_modules/**",
+            "**/typings/**",
+        ],
+    ),
+    visibility = ["//tensorflow:__subpackages__"],
+)
+
+###### PLUGINS ######
+
+# Plugins don't have their own packages (BUILD files) because we want to
+# have only one BUILD file since each BUILD file needs special rewrite rules
+# in the git world.
+
+py_library(
+    name = "base_plugin",
+    srcs = ["plugins/base_plugin.py"],
+    srcs_version = "PY2AND3",
+)
+
+## Embedding projector ##
+py_library(
+    name = "projector",
+    srcs = glob(["plugins/projector/**/*.py"]),
+    srcs_version = "PY2AND3",
+    deps = [
+        ":base_plugin",
+        "//tensorflow/contrib/tensorboard:projector",
+        "//tensorflow/contrib/tensorboard:protos_all_py",
+        "//tensorflow/python:errors",
+        "//tensorflow/python:lib",
+        "//tensorflow/python:platform",
+        "//tensorflow/python:training",
+    ],
 )

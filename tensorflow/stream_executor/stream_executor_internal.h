@@ -1,4 +1,4 @@
-/* Copyright 2015 Google Inc. All Rights Reserved.
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -184,7 +184,7 @@ class StreamExecutorInterface {
   }
   virtual bool Launch(Stream *stream, const ThreadDim &thread_dims,
                       const BlockDim &block_dims, const KernelBase &k,
-                      const std::vector<KernelArg> &args) {
+                      const KernelArgsArrayBase &args) {
     return false;
   }
   virtual void *Allocate(uint64 size) = 0;
@@ -209,6 +209,8 @@ class StreamExecutorInterface {
                                                uint64 size) = 0;
   virtual bool MemZero(Stream *stream, DeviceMemoryBase *location,
                        uint64 size) = 0;
+  virtual bool Memset(Stream *stream, DeviceMemoryBase *location,
+                      uint8 pattern, uint64 size) = 0;
   virtual bool Memset32(Stream *stream, DeviceMemoryBase *location,
                         uint32 pattern, uint64 size) = 0;
   virtual bool Memcpy(Stream *stream, void *host_dst,
@@ -255,9 +257,6 @@ class StreamExecutorInterface {
   // Creates a new DeviceDescription object. Ownership is transferred to the
   // caller.
   virtual DeviceDescription *PopulateDeviceDescription() const = 0;
-
-  virtual KernelArg DeviceMemoryToKernelArg(
-      const DeviceMemoryBase &gpu_mem) const = 0;
 
   // Attempts to register the provided TraceListener with the device-specific
   // Executor implementation. When this is called, the PIMPL interface has

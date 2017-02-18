@@ -7,9 +7,9 @@ and assumes expertise and experience in machine learning.
 
 CIFAR-10 classification is a common benchmark problem in machine learning.  The
 problem is to classify RGB 32x32 pixel images across 10 categories:
-```airplane, automobile, bird, cat, deer, dog, frog, horse, ship, and truck.```
-
-![CIFAR-10 Samples](../../images/cifar_samples.png "CIFAR-10 Samples, from http://www.cs.toronto.edu/~kriz/cifar.html")
+```
+airplane, automobile, bird, cat, deer, dog, frog, horse, ship, and truck.
+```
 
 For more details refer to the [CIFAR-10 page](http://www.cs.toronto.edu/~kriz/cifar.html)
 and a [Tech Report](http://www.cs.toronto.edu/~kriz/learning-features-2009-TR.pdf)
@@ -17,8 +17,9 @@ by Alex Krizhevsky.
 
 ### Goals
 
-The goal of this tutorial is to build a relatively small convolutional neural
-network (CNN) for recognizing images. In the process, this tutorial:
+The goal of this tutorial is to build a relatively small [convolutional neural
+network](https://en.wikipedia.org/wiki/Convolutional_neural_network) (CNN) for
+recognizing images. In the process, this tutorial:
 
 1. Highlights a canonical organization for network architecture,
 training and evaluation.
@@ -33,11 +34,15 @@ new ideas and experimenting with new techniques.
 The CIFAR-10 tutorial demonstrates several important constructs for
 designing larger and more sophisticated models in TensorFlow:
 
-* Core mathematical components including [convolution](
-../../api_docs/python/nn.md#conv2d), [rectified linear activations](
-../../api_docs/python/nn.md#relu), [max pooling](
-../../api_docs/python/nn.md#max_pool) and [local response normalization](
-../../api_docs/python/nn.md#local_response_normalization).
+* Core mathematical components including [convolution](../../api_docs/python/nn.md#conv2d)
+([wiki](https://en.wikipedia.org/wiki/Convolution)),
+[rectified linear activations](../../api_docs/python/nn.md#relu)
+([wiki](https://en.wikipedia.org/wiki/Rectifier_(neural_networks))),
+[max pooling](../../api_docs/python/nn.md#max_pool)
+([wiki](https://en.wikipedia.org/wiki/Convolutional_neural_network#Pooling_layer))
+and [local response normalization](../../api_docs/python/nn.md#local_response_normalization)
+(Chapter 3.3 in
+[AlexNet paper](http://papers.nips.cc/paper/4824-imagenet-classification-with-deep-convolutional-neural-networks.pdf)).
 * [Visualization](../../how_tos/summaries_and_tensorboard/index.md)
 of network activities during training, including input images,
 losses and distributions of activations and gradients.
@@ -52,7 +57,8 @@ that systematically decrements over time.
 for input
 data to isolate the model from disk latency and expensive image pre-processing.
 
-We also provide a multi-GPU version of the model which demonstrates:
+We also provide a [multi-GPU version](#training-a-model-using-multiple-gpu-cards)
+of the model which demonstrates:
 
 * Configuring a model to train across multiple GPU cards in parallel.
 * Sharing and updating variables among multiple GPUs.
@@ -77,21 +83,21 @@ for details.  It consists of 1,068,298 learnable parameters and requires about
 ## Code Organization
 
 The code for this tutorial resides in
-[`tensorflow/models/image/cifar10/`](https://www.tensorflow.org/code/tensorflow/models/image/cifar10/).
+[`tensorflow_models/tutorials/image/cifar10/`](https://www.tensorflow.org/code/tensorflow_models/tutorials/image/cifar10/).
 
 File | Purpose
 --- | ---
-[`cifar10_input.py`](https://www.tensorflow.org/code/tensorflow/models/image/cifar10/cifar10_input.py) | Reads the native CIFAR-10 binary file format.
-[`cifar10.py`](https://www.tensorflow.org/code/tensorflow/models/image/cifar10/cifar10.py) | Builds the CIFAR-10 model.
-[`cifar10_train.py`](https://www.tensorflow.org/code/tensorflow/models/image/cifar10/cifar10_train.py) | Trains a CIFAR-10 model on a CPU or GPU.
-[`cifar10_multi_gpu_train.py`](https://www.tensorflow.org/code/tensorflow/models/image/cifar10/cifar10_multi_gpu_train.py) | Trains a CIFAR-10 model on multiple GPUs.
-[`cifar10_eval.py`](https://www.tensorflow.org/code/tensorflow/models/image/cifar10/cifar10_eval.py) | Evaluates the predictive performance of a CIFAR-10 model.
+[`cifar10_input.py`](https://www.tensorflow.org/code/tensorflow_models/tutorials/image/cifar10/cifar10_input.py) | Reads the native CIFAR-10 binary file format.
+[`cifar10.py`](https://www.tensorflow.org/code/tensorflow_models/tutorials/image/cifar10/cifar10.py) | Builds the CIFAR-10 model.
+[`cifar10_train.py`](https://www.tensorflow.org/code/tensorflow_models/tutorials/image/cifar10/cifar10_train.py) | Trains a CIFAR-10 model on a CPU or GPU.
+[`cifar10_multi_gpu_train.py`](https://www.tensorflow.org/code/tensorflow_models/tutorials/image/cifar10/cifar10_multi_gpu_train.py) | Trains a CIFAR-10 model on multiple GPUs.
+[`cifar10_eval.py`](https://www.tensorflow.org/code/tensorflow_models/tutorials/image/cifar10/cifar10_eval.py) | Evaluates the predictive performance of a CIFAR-10 model.
 
 
 ## CIFAR-10 Model
 
 The CIFAR-10 network is largely contained in
-[`cifar10.py`](https://www.tensorflow.org/code/tensorflow/models/image/cifar10/cifar10.py).
+[`cifar10.py`](https://www.tensorflow.org/code/tensorflow_models/tutorials/image/cifar10/cifar10.py).
 The complete training
 graph contains roughly 765 operations. We find that we can make the code most
 reusable by constructing the graph with the following modules:
@@ -105,7 +111,7 @@ adds operations that perform inference, i.e. classification, on supplied images.
 add operations that compute the loss,
 gradients, variable updates and visualization summaries.
 
-### Model Inputs 
+### Model Inputs
 
 The input part of the model is built by the functions `inputs()` and
 `distorted_inputs()` which read images from the CIFAR-10 binary data files.
@@ -117,8 +123,8 @@ learn more about how the `Reader` class works.
 The images are processed as follows:
 
 *  They are cropped to 24 x 24 pixels, centrally for evaluation or
-   [randomly](../../api_docs/python/image.md#random_crop) for training.
-*  They are [approximately whitened](../../api_docs/python/image.md#per_image_whitening)
+   [randomly](../../api_docs/python/constant_op.md#random_crop) for training.
+*  They are [approximately whitened](../../api_docs/python/image.md#per_image_standardization)
    to make the model insensitive to dynamic range.
 
 For training, we additionally apply a series of random distortions to
@@ -131,8 +137,8 @@ artificially increase the data set size:
 Please see the [Images](../../api_docs/python/image.md) page for the list of
 available distortions. We also attach an
 [`image_summary`](../../api_docs/python/train.md#image_summary) to the images
-so that we may visualize them in TensorBoard.  This is a good practice to verify
-that inputs are built correctly.
+so that we may visualize them in [TensorBoard](../../how_tos/summaries_and_tensorboard/index.md).
+This is a good practice to verify that inputs are built correctly.
 
 <div style="width:50%; margin:auto; margin-bottom:10px; margin-top:20px;">
   <img style="width:70%" src="../../images/cifar_image_summary.png">
@@ -143,7 +149,7 @@ processing time. To prevent these operations from slowing down training, we run
 them inside 16 separate threads which continuously fill a TensorFlow
 [queue](../../api_docs/python/io_ops.md#shuffle_batch).
 
-### Model Prediction 
+### Model Prediction
 
 The prediction part of the model is constructed by the `inference()` function
 which adds operations to compute the *logits* of the predictions. That part of
@@ -168,8 +174,8 @@ Here is a graph generated from TensorBoard describing the inference operation:
 </div>
 
 > **EXERCISE**: The output of `inference` are un-normalized logits. Try editing
-the network architecture to return normalized predictions using [`tf.softmax()`]
-(../../api_docs/python/nn.md#softmax).
+the network architecture to return normalized predictions using
+[`tf.nn.softmax()`](../../api_docs/python/nn.md#softmax).
 
 The `inputs()` and `inference()` functions provide all the components
 necessary to perform evaluation on a model. We now shift our focus towards
@@ -182,7 +188,7 @@ layers of Alex's original model are locally connected and not fully connected.
 Try editing the architecture to exactly reproduce the locally connected
 architecture in the top layer.
 
-### Model Training 
+### Model Training
 
 The usual method for training a network to perform N-way classification is
 [multinomial logistic regression](https://en.wikipedia.org/wiki/Multinomial_logistic_regression),
@@ -242,7 +248,7 @@ Filling queue with 20000 CIFAR images before starting to train. This will take a
 ...
 ```
 
-The script reports the total loss every 10 steps as well the speed at which
+The script reports the total loss every 10 steps as well as the speed at which
 the last batch of data was processed. A few comments:
 
 * The first batch of data can be inordinately slow (e.g. several minutes) as the
@@ -258,8 +264,8 @@ obtained on a Tesla K40c. If you are running on a CPU, expect slower performance
 
 > **EXERCISE:** When experimenting, it is sometimes annoying that the first
 training step can take so long. Try decreasing the number of images that
-initially fill up the queue.  Search for `NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN`
-in `cifar10.py`.
+initially fill up the queue.  Search for `min_fraction_of_examples_in_queue`
+in `cifar10_input.py`.
 
 `cifar10_train.py` periodically [saves](../../api_docs/python/state_ops.md#Saver)
 all model parameters in
@@ -301,7 +307,7 @@ values.  See how the scripts use
 [`ExponentialMovingAverage`](../../api_docs/python/train.md#ExponentialMovingAverage)
 for this purpose.
 
-## Evaluating a Model 
+## Evaluating a Model
 
 Let us now evaluate how well the trained model performs on a hold-out data set.
 The model is evaluated by the script `cifar10_eval.py`.  It constructs the model
@@ -421,19 +427,6 @@ version of the training script parallelizes the model across multiple GPU cards.
 
 ```shell
 python cifar10_multi_gpu_train.py --num_gpus=2
-```
-
-The training script should output:
-
-```shell
-Filling queue with 20000 CIFAR images before starting to train. This will take a few minutes.
-2015-11-04 11:45:45.927302: step 0, loss = 4.68 (2.0 examples/sec; 64.221 sec/batch)
-2015-11-04 11:45:49.133065: step 10, loss = 4.66 (533.8 examples/sec; 0.240 sec/batch)
-2015-11-04 11:45:51.397710: step 20, loss = 4.64 (597.4 examples/sec; 0.214 sec/batch)
-2015-11-04 11:45:54.446850: step 30, loss = 4.62 (391.0 examples/sec; 0.327 sec/batch)
-2015-11-04 11:45:57.152676: step 40, loss = 4.61 (430.2 examples/sec; 0.298 sec/batch)
-2015-11-04 11:46:00.437717: step 50, loss = 4.59 (406.4 examples/sec; 0.315 sec/batch)
-...
 ```
 
 Note that the number of GPU cards used defaults to 1. Additionally, if only 1

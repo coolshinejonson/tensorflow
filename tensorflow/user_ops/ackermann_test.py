@@ -1,4 +1,4 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,11 +17,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-# pylint: disable=g-bad-import-order
-# pylint: disable=unused-import
 import os.path
-
-import tensorflow.python.platform
 
 import tensorflow as tf
 
@@ -37,7 +33,7 @@ class AckermannTest(tf.test.TestCase):
     self.assertEqual(ackermann.OP_LIST.op[0].name, 'Ackermann')
 
     with self.test_session():
-      self.assertEqual(ackermann.ackermann().eval(), 'A(m, 0) == A(m-1, 1)')
+      self.assertEqual(ackermann.ackermann().eval(), b'A(m, 0) == A(m-1, 1)')
 
 
 if __name__ == '__main__':

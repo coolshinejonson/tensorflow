@@ -1,4 +1,4 @@
-/* Copyright 2015 Google Inc. All Rights Reserved.
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,19 +18,18 @@ limitations under the License.
 #include <string>
 #include <vector>
 
-#include <gtest/gtest.h>
 #include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/graph/graph.h"
 #include "tensorflow/core/graph/graph_constructor.h"
 #include "tensorflow/core/graph/graph_def_builder.h"
 #include "tensorflow/core/kernels/ops_util.h"
+#include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/core/status_test_util.h"
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/protobuf.h"
-#include "tensorflow/core/platform/regexp.h"
+#include "tensorflow/core/platform/test.h"
 #include "tensorflow/core/platform/test_benchmark.h"
-#include "tensorflow/core/public/status.h"
 
 // TODO(josh11b): Test setting the "device" field of a NodeDef.
 // TODO(josh11b): Test that feeding won't prune targets.
@@ -41,7 +40,6 @@ namespace {
 class SubgraphTest : public ::testing::Test {
  protected:
   SubgraphTest() : g_(new Graph(OpRegistry::Global())) {
-    RequireDefaultOps();
     device_info_.set_name("/job:a/replica:0/task:0/cpu:0");
     device_info_.set_device_type(DeviceType(DEVICE_CPU).type());
     device_info_.set_incarnation(0);
@@ -267,11 +265,13 @@ TEST_F(SubgraphTest, Errors) {
   EXPECT_TRUE(
       HasSubstr(Subgraph("c:0", "b:0,c:0", ""), "both fed and fetched"));
   // Feed not found.
-  EXPECT_TRUE(HasSubstr(Subgraph("foo:0", "", ""), "unable to find"));
+  EXPECT_TRUE(HasSubstr(Subgraph("foo:0", "c:0", ""), "unable to find"));
   // Fetch not found.
   EXPECT_TRUE(HasSubstr(Subgraph("", "foo:0", ""), "not found"));
   // Target not found.
   EXPECT_TRUE(HasSubstr(Subgraph("", "", "foo"), "not found"));
+  // No targets specified.
+  EXPECT_TRUE(HasSubstr(Subgraph("", "", ""), "at least one target"));
 }
 
 REGISTER_OP("In").Output("o: float");

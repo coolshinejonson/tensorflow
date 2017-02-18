@@ -3,7 +3,7 @@
 When you train a model, you use [variables](../../api_docs/python/state_ops.md)
 to hold and update parameters.  Variables are in-memory buffers containing
 tensors.  They must be explicitly initialized and can be saved to disk during
-and after training. You can later restore saved values to exercise or analyse
+and after training. You can later restore saved values to exercise or analyze
 the model.
 
 This document references the following TensorFlow classes.  Follow the links to
@@ -43,6 +43,38 @@ Calling `tf.Variable()` adds several ops to the graph:
 The value returned by `tf.Variable()` value is an instance of the Python class
 `tf.Variable`.
 
+### Device placement
+
+A variable can be pinned to a particular device when it is created, using a
+[`with tf.device(...):`](../../api_docs/python/framework.md#device) block:
+
+```python
+# Pin a variable to CPU.
+with tf.device("/cpu:0"):
+  v = tf.Variable(...)
+
+# Pin a variable to GPU.
+with tf.device("/gpu:0"):
+  v = tf.Variable(...)
+
+# Pin a variable to a particular parameter server task.
+with tf.device("/job:ps/task:7"):
+  v = tf.Variable(...)
+```
+
+**N.B.** Operations that mutate a variable, such as
+[`v.assign()`](../../api_docs/python/state_ops.md#Variable.assign) and the parameter
+update operations in a
+[`tf.train.Optimizer`](../../api_docs/python/train.md#Optimizer) *must* run on
+the same device as the variable. Incompatible device placement directives will
+be ignored when creating these operations.
+
+Device placement is particularly important when running in a replicated
+setting. See
+[`tf.train.replica_device_setter()`](../../api_docs/python/train.md#replica_device_setter)
+for details of a device function that can simplify the configuration for devices
+for a replicated model.
+
 ## Initialization
 
 Variable initializers must be run explicitly before other ops in your model can
@@ -52,7 +84,7 @@ initializers, and run that op before using the model.
 You can alternatively restore variable values from a checkpoint file, see
 below.
 
-Use `tf.initialize_all_variables()` to add an op to run variable initializers.
+Use `tf.global_variables_initializer()` to add an op to run variable initializers.
 Only run that op after you have fully constructed your model and launched it in
 a session.
 
@@ -63,7 +95,7 @@ weights = tf.Variable(tf.random_normal([784, 200], stddev=0.35),
 biases = tf.Variable(tf.zeros([200]), name="biases")
 ...
 # Add an op to initialize the variables.
-init_op = tf.initialize_all_variables()
+init_op = tf.global_variables_initializer()
 
 # Later, when launching the model
 with tf.Session() as sess:
@@ -77,7 +109,7 @@ with tf.Session() as sess:
 ### Initialization from another Variable
 
 You sometimes need to initialize a variable from the initial value of another
-variable.  As the op added by `tf.initialize_all_variables()` initializes all
+variable.  As the op added by `tf.global_variables_initializer()` initializes all
 variables in parallel you have to be careful when this is needed.
 
 To initialize a new variable from the value of another variable use the other
@@ -98,7 +130,7 @@ w_twice = tf.Variable(weights.initialized_value() * 2.0, name="w_twice")
 
 ### Custom Initialization
 
-The convenience function `tf.initialize_all_variables()` adds an op to
+The convenience function `tf.global_variables_initializer()` adds an op to
 initialize *all variables* in the model.  You can also pass it an explicit list
 of variables to initialize.  See the
 [Variables Documentation](../../api_docs/python/state_ops.md) for more options,
@@ -122,6 +154,10 @@ variables in the checkpoint files.  By default, it uses the value of the
 [`Variable.name`](../../api_docs/python/state_ops.md#Variable.name) property for
 each variable.
 
+To understand what variables are in a checkpoint, you can use the
+[`inspect_checkpoint`](https://www.tensorflow.org/code/tensorflow/python/tools/inspect_checkpoint.py)
+library, and in particular, the `print_tensors_in_checkpoint_file` function.
+
 ### Saving Variables
 
 Create a `Saver` with `tf.train.Saver()` to manage all variables in
@@ -133,7 +169,7 @@ v1 = tf.Variable(..., name="v1")
 v2 = tf.Variable(..., name="v2")
 ...
 # Add an op to initialize the variables.
-init_op = tf.initialize_all_variables()
+init_op = tf.global_variables_initializer()
 
 # Add ops to save and restore all the variables.
 saver = tf.train.Saver()

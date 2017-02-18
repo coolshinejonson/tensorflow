@@ -1,4 +1,4 @@
-/* Copyright 2015 Google Inc. All Rights Reserved.
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,8 +13,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
+#include "tensorflow/core/framework/shape_inference.h"
 
 using namespace tensorflow;
 
@@ -22,6 +24,7 @@ REGISTER_OP("ZeroOut")
     .Attr("T: realnumbertype")
     .Input("to_zero: T")
     .Output("zeroed: T")
+    .SetShapeFn(shape_inference::UnchangedShape)
     .Doc(R"doc(
 Zeros out all but the first value of a Tensor.
 
@@ -70,7 +73,7 @@ class ZeroOutOp : public OpKernel {
     // Set all the elements of the output tensor to 0
     const int N = input.size();
     for (int i = 0; i < N; i++) {
-      output_flat(i) = 0;
+      output_flat(i) = T(0);
     }
 
     // Preserve the first input value

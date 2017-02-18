@@ -1,4 +1,4 @@
-/* Copyright 2015 Google Inc. All Rights Reserved.
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,11 +19,12 @@ limitations under the License.
 
 #include <cfloat>
 #include <unordered_map>
+#include <vector>
 
 #include "tensorflow/core/framework/op_kernel.h"
+#include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/kernels/range_sampler.h"
 #include "tensorflow/core/platform/logging.h"
-#include "tensorflow/core/public/tensor_shape.h"
 #include "tensorflow/core/util/guarded_philox_random.h"
 
 namespace tensorflow {
@@ -189,7 +190,7 @@ class ComputeAccidentalHitsOp : public OpKernel {
 
   void Compute(OpKernelContext* context) override {
     const Tensor& in_true_candidates = context->input(0);
-    TensorShape in_true_candidates_shape = in_true_candidates.shape();
+    const TensorShape& in_true_candidates_shape = in_true_candidates.shape();
     OP_REQUIRES(context, TensorShapeUtils::IsMatrix(in_true_candidates_shape) &&
                              in_true_candidates_shape.dim_size(1) == num_true_,
                 errors::InvalidArgument(

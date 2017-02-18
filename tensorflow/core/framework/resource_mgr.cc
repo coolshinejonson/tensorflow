@@ -1,4 +1,4 @@
-/* Copyright 2015 Google Inc. All Rights Reserved.
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,10 +16,12 @@ limitations under the License.
 #include "tensorflow/core/framework/resource_mgr.h"
 
 #include "tensorflow/core/framework/node_def_util.h"
-#include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/gtl/map_util.h"
-#include "tensorflow/core/platform/regexp.h"
+#include "tensorflow/core/lib/strings/scanner.h"
+#include "tensorflow/core/lib/strings/str_util.h"
+#include "tensorflow/core/lib/strings/stringprintf.h"
+#include "tensorflow/core/platform/demangle.h"
 
 namespace tensorflow {
 
@@ -39,6 +41,36 @@ void ResourceMgr::Clear() {
     delete p.second;
   }
   containers_.clear();
+}
+
+string ResourceMgr::DebugString() const {
+  mutex_lock l(mu_);
+  struct Line {
+    const string* container;
+    const string type;
+    const string* resource;
+    const string detail;
+  };
+  std::vector<Line> lines;
+  for (const auto& p : containers_) {
+    const string& container = p.first;
+    for (const auto& q : *p.second) {
+      const Key& key = q.first;
+      const char* type = key.first.name();
+      const string& resource = key.second;
+      Line l{&container, port::Demangle(type), &resource,
+             q.second->DebugString()};
+      lines.push_back(l);
+    }
+  }
+  std::vector<string> text;
+  for (const Line& line : lines) {
+    text.push_back(strings::Printf(
+        "%-20s | %-40s | %-40s | %-s", line.container->c_str(),
+        line.type.c_str(), line.resource->c_str(), line.detail.c_str()));
+  }
+  std::sort(text.begin(), text.end());
+  return str_util::Join(text, "\n");
 }
 
 Status ResourceMgr::DoCreate(const string& container, TypeIndex type,
@@ -104,7 +136,8 @@ Status ResourceMgr::Cleanup(const string& container) {
     mutex_lock l(mu_);
     auto iter = containers_.find(container);
     if (iter == containers_.end()) {
-      return errors::NotFound("Container ", container, " does not exist.");
+      // Nothing to cleanup, it's OK.
+      return Status::OK();
     }
     b = iter->second;
     containers_.erase(iter);
@@ -117,15 +150,22 @@ Status ResourceMgr::Cleanup(const string& container) {
   return Status::OK();
 }
 
+static bool IsValidContainerName(StringPiece s) {
+  using ::tensorflow::strings::Scanner;
+  return Scanner(s)
+      .One(Scanner::LETTER_DIGIT_DOT)
+      .Any(Scanner::LETTER_DIGIT_DASH_DOT_SLASH)
+      .Eos()
+      .GetResult();
+}
+
 Status ContainerInfo::Init(ResourceMgr* rmgr, const NodeDef& ndef,
                            bool use_node_name_as_default) {
   CHECK(rmgr);
   rmgr_ = rmgr;
   string attr_container;
   TF_RETURN_IF_ERROR(GetNodeAttr(ndef, "container", &attr_container));
-  static RE2 container_re("[A-Za-z0-9.][A-Za-z0-9_.\\-/]*");
-  if (!attr_container.empty() &&
-      !RE2::FullMatch(attr_container, container_re)) {
+  if (!attr_container.empty() && !IsValidContainerName(attr_container)) {
     return errors::InvalidArgument("container contains invalid characters: ",
                                    attr_container);
   }
@@ -156,6 +196,10 @@ string ContainerInfo::DebugString() const {
   return strings::StrCat("[", container(), ",", name(), ",",
                          resource_is_private_to_kernel() ? "private" : "public",
                          "]");
+}
+
+ResourceHandle HandleFromInput(OpKernelContext* ctx, int input) {
+  return ctx->input(input).flat<ResourceHandle>()(0);
 }
 
 }  //  end namespace tensorflow

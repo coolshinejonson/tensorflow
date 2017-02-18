@@ -1,4 +1,4 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,32 +13,78 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Load a file resource and return the contents."""
+"""Resource management library.
+
+@@get_data_files_path
+@@get_path_to_datafile
+@@load_resource
+@@readahead_file_path
+"""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import inspect
-import os.path
-import sys
+import inspect as _inspect
+import os as _os
+import sys as _sys
 
-# pylint: disable=unused-import
-# pylint: disable=g-import-not-at-top
-# pylint: disable=wildcard-import
+from tensorflow.python.util.all_util import remove_undocumented
+
+
+def load_resource(path):
+  """Load the resource at given path, where path is relative to tensorflow/.
+
+  Args:
+    path: a string resource path relative to tensorflow/.
+
+  Returns:
+    The contents of that resource.
+
+  Raises:
+    IOError: If the path is not found, or the resource can't be opened.
+  """
+  tensorflow_root = (
+      _os.path.join(
+          _os.path.dirname(__file__), _os.pardir, _os.pardir))
+  path = _os.path.join(tensorflow_root, path)
+  path = _os.path.abspath(path)
+  with open(path, 'rb') as f:
+    return f.read()
+
+
 # pylint: disable=protected-access
-from . import control_imports
-import tensorflow.python.platform
-if control_imports.USE_OSS:
-  from tensorflow.python.platform.default._resource_loader import *
-else:
-  from tensorflow.python.platform.google._resource_loader import *
-
-
 def get_data_files_path():
   """Get the directory where files specified in data attribute are stored.
 
   Returns:
     The directory where files specified in data attribute of py_test
-    and py_binary are store.
+    and py_binary are stored.
   """
-  return os.path.dirname(inspect.getfile(sys._getframe(1)))
+  return _os.path.dirname(_inspect.getfile(_sys._getframe(1)))
+
+
+def get_path_to_datafile(path):
+  """Get the path to the specified file in the data dependencies.
+
+  The path is relative to tensorflow/
+
+  Args:
+    path: a string resource path relative to tensorflow/
+
+  Returns:
+    The path to the specified file present in the data attribute of py_test
+    or py_binary.
+
+  Raises:
+    IOError: If the path is not found, or the resource can't be opened.
+  """
+  data_files_path = _os.path.dirname(_inspect.getfile(_sys._getframe(1)))
+  return _os.path.join(data_files_path, path)
+
+
+def readahead_file_path(path, unused_readahead=None):
+  """Readahead files not implemented; simply returns given path."""
+  return path
+
+_allowed_symbols = []
+remove_undocumented(__name__, _allowed_symbols)

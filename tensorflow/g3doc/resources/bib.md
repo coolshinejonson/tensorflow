@@ -1,6 +1,7 @@
-# BibTex Citation
+# TensorFlow Whitepaper
+
 If you use TensorFlow in your research and would like to cite the TensorFlow
-system, we suggest you cite the following whitepaper:
+system, we suggest you cite the [whitepaper](http://download.tensorflow.org/paper/whitepaper2015.pdf):
 
 ```
 @misc{tensorflow2015-whitepaper,
@@ -67,4 +68,20 @@ Oriol Vinyals, Pete Warden, Martin Wattenberg, Martin Wicke,
 Yuan Yu, and Xiaoqiang Zheng.
 TensorFlow: Large-scale machine learning on heterogeneous systems,
 2015. Software available from tensorflow.org.
+```
+
+If you use [TF.Learn](https://www.tensorflow.org/tutorials/tflearn/) in your research and would like to cite it, we suggest you cite the [whitepaper](https://arxiv.org/abs/1612.04251):
+
+```
+@article{tang2016tflearn,
+  title={TF.Learn: TensorFlow's High-level Module for Distributed Machine Learning},
+  author={Tang, Yuan},
+  journal={arXiv preprint arXiv:1612.04251},
+  year={2016}
+}
+```
+
+In textual form:
+```
+Tang, Yuan. "TF.Learn: TensorFlow's High-level Module for Distributed Machine Learning." arXiv preprint arXiv:1612.04251 (2016).
 ```

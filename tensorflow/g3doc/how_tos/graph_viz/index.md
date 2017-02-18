@@ -28,9 +28,9 @@ with tf.name_scope('hidden') as scope:
 
 This results in the following three op names:
 
-* *hidden*/alpha
-* *hidden*/weights
-* *hidden*/biases
+* `hidden/alpha`
+* `hidden/weights`
+* `hidden/biases`
 
 By default, the visualization will collapse all three into a node labeled `hidden`.
 The extra detail isn't lost. You can double-click, or click
@@ -73,15 +73,16 @@ and `control_dependency`.
 
 There's a second trick to simplifying the layout. Most TensorFlow graphs have a
 few nodes with many connections to other nodes. For example, many nodes might
-have a control dependencies on an initialization step. Drawing all edges
-between the `init` node and its dependencies would create a very cluttered
-view.
+have a control dependency on an initialization step. Drawing all edges between
+the `init` node and its dependencies would create a very cluttered view.
 
 To reduce clutter, the visualization separates out all high-degree nodes to an
 *auxiliary* area on the right and doesn't draw lines to represent their edges.
 Instead of lines, we draw small *node icons* to indicate the connections.
 Separating out the auxiliary nodes typically doesn't remove critical
 information since these nodes are usually related to bookkeeping functions.
+See [Interaction](#interaction) for how to move nodes between the main graph
+and the auxiliary area.
 
 <table width="100%;">
   <tr>
@@ -106,7 +107,9 @@ One last structural simplification is *series collapsing*. Sequential
 motifs--that is, nodes whose names differ by a number at the end and have
 isomorphic structures--are collapsed into a single *stack* of nodes, as shown
 below. For networks with long sequences, this greatly simplifies the view. As
-with hierarchical nodes, double-clicking expands the series.
+with hierarchical nodes, double-clicking expands the series. See
+[Interaction](#interaction) for how to disable/enable series collapsing for a
+specific set of nodes.
 
 <table width="100%;">
   <tr>
@@ -142,7 +145,7 @@ Symbol | Meaning
 ![Control dependency edge](../../images/control_edge.png "Control dependency edge") | Edge showing the control dependency between operations.
 ![Reference edge](../../images/reference_edge.png "Reference edge") | A reference edge showing that the outgoing operation node can mutate the incoming tensor.
 
-## Interaction
+## Interaction {#interaction}
 
 Navigate the graph by panning and zooming. Click and drag to pan, and use a
 scroll gesture to zoom. Double-click on a node, or click on its `+` button, to
@@ -173,6 +176,16 @@ right corner of the visualization.
     </td>
   </tr>
 </table>
+
+TensorBoard provides several ways to change the visual layout of the graph. This
+doesn't change the graph's computational semantics, but it can bring some
+clarity to the network's structure. By right clicking on a node or pressing
+buttons on the bottom of that node's info card, you can make the following
+changes to its layout:
+
+* Nodes can be moved between the main graph and the auxiliary area.
+* A series of nodes can be ungrouped so that the nodes in the series do not
+appear grouped together. Ungrouped series can likewise be regrouped.
 
 Selection can also be helpful in understanding high-degree nodes. Select any
 high-degree node, and the corresponding node icons for its other connections
@@ -206,6 +219,97 @@ The images below give an illustration for a piece of a real-life graph.
     </td>
     <td style="width: 50%;">
       Device view: Name scopes are colored proportionally to the fraction of devices of the operation nodes inside them. Here, purple means GPU and the green is CPU.
+    </td>
+  </tr>
+</table>
+
+## Tensor shape information
+
+When the serialized `GraphDef` includes tensor shapes, the graph visualizer
+labels edges with tensor dimensions, and edge thickness reflects total tensor
+size. To include tensor shapes in the `GraphDef` pass the actual graph object
+(as in `sess.graph`) to the `SummaryWriter` when serializing the graph.
+The images below show the CIFAR-10 model with tensor shape information:
+<table width="100%;">
+  <tr>
+    <td style="width: 100%;">
+      <img src="../../images/tensor_shapes.png" alt="CIFAR-10 model with tensor shape information" title="CIFAR-10 model with tensor shape information" />
+    </td>
+  </tr>
+  <tr>
+    <td style="width: 100%;">
+      CIFAR-10 model with tensor shape information.
+    </td>
+  </tr>
+</table>
+
+## Runtime statistics
+
+Often it is useful to collect runtime metadata for a run, such as total memory
+usage, total compute time, and tensor shapes for nodes. The code example below
+is a snippet from the train and test section of a modification of the
+[simple MNIST tutorial](../../tutorials/mnist/beginners/index.md),
+in which we have recorded summaries and runtime statistics. See the [Summaries Tutorial](../../how_tos/summaries_and_tensorboard/index.md#serializing-the-data)
+for details on how to record summaries.
+Full source is [here](https://www.tensorflow.org/code/tensorflow/examples/tutorials/mnist/mnist_with_summaries.py).
+
+```python
+  # Train the model, and also write summaries.
+  # Every 10th step, measure test-set accuracy, and write test summaries
+  # All other steps, run train_step on training data, & add training summaries
+
+  def feed_dict(train):
+    """Make a TensorFlow feed_dict: maps data onto Tensor placeholders."""
+    if train or FLAGS.fake_data:
+      xs, ys = mnist.train.next_batch(100, fake_data=FLAGS.fake_data)
+      k = FLAGS.dropout
+    else:
+      xs, ys = mnist.test.images, mnist.test.labels
+      k = 1.0
+    return {x: xs, y_: ys, keep_prob: k}
+
+  for i in range(FLAGS.max_steps):
+    if i % 10 == 0:  # Record summaries and test-set accuracy
+      summary, acc = sess.run([merged, accuracy], feed_dict=feed_dict(False))
+      test_writer.add_summary(summary, i)
+      print('Accuracy at step %s: %s' % (i, acc))
+    else:  # Record train set summaries, and train
+      if i % 100 == 99:  # Record execution stats
+        run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+        run_metadata = tf.RunMetadata()
+        summary, _ = sess.run([merged, train_step],
+                              feed_dict=feed_dict(True),
+                              options=run_options,
+                              run_metadata=run_metadata)
+        train_writer.add_run_metadata(run_metadata, 'step%d' % i)
+        train_writer.add_summary(summary, i)
+        print('Adding run metadata for', i)
+      else:  # Record a summary
+        summary, _ = sess.run([merged, train_step], feed_dict=feed_dict(True))
+        train_writer.add_summary(summary, i)
+```
+
+This code will emit runtime statistics for every 100th step starting at step99.
+
+When you launch tensorboard and go to the Graph tab, you will now see options
+under "Session runs" which correspond to the steps where run metadata was added.
+Selecting one of these runs will show you the snapshot of the network at that
+step, fading out unused nodes. In the controls on the left hand side, you will
+be able to color the nodes by total memory or total compute time. Additionally,
+clicking on a node will display the exact total memory, compute time, and
+tensor output sizes.
+
+
+<table width="100%;">
+  <tr style="height: 380px">
+    <td>
+      <img src="../../images/colorby_compute_time.png" alt="Color by compute time" title="Color by compute time"/>
+    </td>
+    <td>
+      <img src="../../images/run_metadata_graph.png" alt="Run metadata graph" title="Run metadata graph" />
+    </td>
+    <td>
+      <img src="../../images/run_metadata_infocard.png" alt="Run metadata info card" title="Run metadata info card" />
     </td>
   </tr>
 </table>

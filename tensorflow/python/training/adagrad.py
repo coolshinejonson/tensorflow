@@ -1,4 +1,4 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,18 +18,19 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import ops
-from tensorflow.python.ops import constant_op
+from tensorflow.python.ops import math_ops
 from tensorflow.python.training import optimizer
 from tensorflow.python.training import training_ops
 
 
 class AdagradOptimizer(optimizer.Optimizer):
-  """Optimizer that implements the Adagrad algorithm. (http://www.jmlr.org/papers/volume12/duchi11a/duchi11a.pdf)
+  """Optimizer that implements the Adagrad algorithm.
 
-  See http://www.jmlr.org/papers/volume12/duchi11a/duchi11a.pdf.
-
-  @@__init__
+  See this [paper](http://www.jmlr.org/papers/volume12/duchi11a/duchi11a.pdf)
+  or this
+  [intro](http://cs.stanford.edu/~ppasupat/a9online/uploads/proximal_notes.pdf).
   """
 
   def __init__(self, learning_rate, initial_accumulator_value=0.1,
@@ -58,8 +59,10 @@ class AdagradOptimizer(optimizer.Optimizer):
 
   def _create_slots(self, var_list):
     for v in var_list:
-      val = constant_op.constant(self._initial_accumulator_value,
-                                 shape=v.get_shape())
+      with ops.colocate_with(v):
+        val = constant_op.constant(self._initial_accumulator_value,
+                                   shape=v.get_shape(),
+                                   dtype=v.dtype.base_dtype)
       self._get_or_make_slot(v, val, "accumulator", self._name)
 
   def _prepare(self):
@@ -69,11 +72,18 @@ class AdagradOptimizer(optimizer.Optimizer):
   def _apply_dense(self, grad, var):
     acc = self.get_slot(var, "accumulator")
     return training_ops.apply_adagrad(
-        var, acc, self._learning_rate_tensor, grad,
+        var,
+        acc,
+        math_ops.cast(self._learning_rate_tensor, var.dtype.base_dtype),
+        grad,
         use_locking=self._use_locking)
 
   def _apply_sparse(self, grad, var):
     acc = self.get_slot(var, "accumulator")
     return training_ops.sparse_apply_adagrad(
-        var, acc, self._learning_rate_tensor, grad.values, grad.indices,
+        var,
+        acc,
+        math_ops.cast(self._learning_rate_tensor, var.dtype.base_dtype),
+        grad.values,
+        grad.indices,
         use_locking=self._use_locking)

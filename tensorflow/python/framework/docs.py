@@ -1,4 +1,4 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,17 +15,17 @@
 
 """Updates generated docs from Python doc comments.
 
-Both updates the files in the file-system and executes g4 commands to
-make sure any changes are ready to be submitted.
+Updates the documentation files.
 """
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import functools
 import inspect
 import os
 import re
-import sys
 
 
 _arg_re = re.compile(" *([*]{0,2}[a-zA-Z][a-zA-Z0-9_]*):")
@@ -33,6 +33,9 @@ _section_re = re.compile("([A-Z][a-zA-Z ]*):$")
 _always_drop_symbol_re = re.compile("_[_a-zA-Z0-9]")
 _anchor_re = re.compile(r"^[\w.]+$")
 _member_mark = "@@"
+_indiv_dir = "functions_and_classes"
+_num_subdirs = 10
+_subdir_prefix = "shard"
 
 
 class Document(object):
@@ -82,13 +85,13 @@ class Index(Document):
     print("# TensorFlow Python reference documentation", file=f)
     print("", file=f)
     fullname_f = lambda name: self._members[name][0]
-    anchor_f = lambda name: _get_anchor(self._module_to_name, fullname_f(name))
+    anchor_f = lambda name: get_anchor(self._module_to_name, fullname_f(name))
 
     for filename, library in self._filename_to_library_map:
       sorted_names = sorted(library.mentioned, key=lambda x: (str.lower(x), x))
       member_names = [n for n in sorted_names if n in self._members]
-      # TODO: This is a hack that should be removed as soon as the website code
-      # allows it.
+      # TODO(wicke): This is a hack that should be removed as soon as the
+      # website code allows it.
       full_filename = self._path_prefix + filename
       links = ["[`%s`](%s#%s)" % (name, full_filename, anchor_f(name))
                for name in member_names]
@@ -98,21 +101,32 @@ class Index(Document):
           print("  * %s" % link, file=f)
         print("", file=f)
 
-def collect_members(module_to_name):
+
+def collect_members(module_to_name, exclude=()):
   """Collect all symbols from a list of modules.
 
   Args:
     module_to_name: Dictionary mapping modules to short names.
+    exclude: Set of fully qualified names to exclude.
 
   Returns:
     Dictionary mapping name to (fullname, member) pairs.
+
+  Raises:
+    RuntimeError: if we can not resolve a name collision.
   """
   members = {}
   for module, module_name in module_to_name.items():
+    all_names = getattr(module, "__all__", None)
     for name, member in inspect.getmembers(module):
-      if ((inspect.isfunction(member) or inspect.isclass(member)) and
-          not _always_drop_symbol_re.match(name)):
-        fullname = '%s.%s' % (module_name, name)
+      if ((inspect.isfunction(member)
+           or inspect.isclass(member)
+           or isinstance(member, functools.partial))
+          and not _always_drop_symbol_re.match(name) and
+          (all_names is None or name in all_names)):
+        fullname = "%s.%s" % (module_name, name)
+        if fullname in exclude:
+          continue
         if name in members:
           other_fullname, other_member = members[name]
           if member is not other_member:
@@ -121,14 +135,14 @@ def collect_members(module_to_name):
           if len(fullname) == len(other_fullname):
             raise RuntimeError("Can't decide whether to use %s or %s for %s: "
                                "both full names have length %d" %
-                               (fullname, other_fullname, len(fullname)))
+                               (fullname, other_fullname, name, len(fullname)))
           if len(fullname) > len(other_fullname):
             continue  # Use the shorter full name
         members[name] = fullname, member
   return members
 
 
-def _get_anchor(module_to_name, fullname):
+def get_anchor(module_to_name, fullname):
   """Turn a full member name into an anchor.
 
   Args:
@@ -152,6 +166,14 @@ def _get_anchor(module_to_name, fullname):
       if len(anchor) > len(rest):
         anchor = rest
   return anchor
+
+
+def _stable_hash(s):
+  """A simple string hash that won't change from run to run."""
+  ret = 0
+  for c in s:
+    ret = ret * 97 + ord(c)
+  return ret
 
 
 class Library(Document):
@@ -202,15 +224,13 @@ class Library(Document):
     """Set of excluded symbols."""
     return self._exclude_symbols
 
-  def _should_include_member(self, name, member):
+  def _should_include_member(self, name):
     """Returns True if this member should be included in the document."""
-    # Always exclude symbols matching _always_drop_symbol_re.
-    if _always_drop_symbol_re.match(name):
-      return False
-    # Finally, exclude any specifically-excluded symbols.
-    if name in self._exclude_symbols:
-      return False
-    return True
+    # __x__ should be documented always
+    name_is_operator = name.startswith("__") and name.endswith("__")
+    name_is_private = name.startswith("_") and not name_is_operator
+    name_is_excluded = name in self._exclude_symbols
+    return not (name_is_private or name_is_excluded)
 
   def get_imported_modules(self, module):
     """Returns the list of modules imported from `module`."""
@@ -234,20 +254,80 @@ class Library(Document):
     for name, member in inspect.getmembers(cls):
       # Only show methods and properties presently.  In Python 3,
       # methods register as isfunction.
-      is_method = inspect.ismethod(member) or inspect.isfunction(member)
+      is_method = (inspect.ismethod(member) or inspect.isfunction(member)
+                   or isinstance(member, functools.partial))
       if not (is_method or isinstance(member, property)):
         continue
-      if ((is_method and member.__name__ == "__init__")
-          or self._should_include_member(name, member)):
+      if self._should_include_member(name):
         yield name, ("%s.%s" % (cls_name, name), member)
+
+  def shard_dir(self, name):
+    """Returns the path of the doc subdirectory for member `name`.
+
+    When generating individual files for each function and class, we shard
+    the files across several directories to avoid hitting the limit for
+    files per directory. This function determines the subdirectory for
+    a member based on a stable hash of its name.
+
+    Args:
+      name: string. The name of a function or class.
+
+    Returns:
+      The path to a subdirectory of the api docs directory.
+    """
+    index = _stable_hash(name) % _num_subdirs
+    return os.path.join(self.functions_and_classes_dir,
+                        _subdir_prefix + str(index))
+
+  def set_functions_and_classes_dir(self, dirname):
+    """Sets the name of the directory for function and class markdown files.
+
+    Args:
+      dirname: string. The name of the directory in which to store function
+        and class markdown files.
+    """
+    self.functions_and_classes_dir = dirname
 
   def _generate_signature_for_function(self, func):
     """Given a function, returns a string representing its args."""
     args_list = []
-    argspec = inspect.getargspec(func)
+    if isinstance(func, functools.partial):
+      argspec = inspect.getargspec(func.func)
+      # Remove the args from the original function that have been used up.
+      first_default_arg = (
+          len(argspec.args or []) - len(argspec.defaults or []))
+      partial_args = len(func.args)
+      if argspec.args:
+        argspec_args = list(argspec.args[partial_args:])
+      else:
+        argspec_args = []
+      if argspec.defaults:
+        argspec_defaults = list(argspec.defaults[
+            max(0, partial_args-first_default_arg):])
+      else:
+        argspec_defaults = []
+      first_default_arg = max(0, first_default_arg - partial_args)
+      for kwarg in func.keywords:
+        if kwarg in argspec_args:
+          i = argspec_args.index(kwarg)
+          argspec_args.pop(i)
+          if i >= first_default_arg:
+            argspec_defaults.pop(i-first_default_arg)
+          else:
+            first_default_arg -= 1
+      argspec_varargs = None
+      argspec_keywords = None
+
+    else:
+      argspec = inspect.getargspec(func)
+      argspec_args = argspec.args
+      argspec_defaults = argspec.defaults
+      argspec_varargs = argspec.varargs
+      argspec_keywords = argspec.keywords
+
     first_arg_with_default = (
-        len(argspec.args or []) - len(argspec.defaults or []))
-    for arg in argspec.args[:first_arg_with_default]:
+        len(argspec_args or []) - len(argspec_defaults or []))
+    for arg in argspec_args[:first_arg_with_default]:
       if arg == "self":
         # Python documentation typically skips `self` when printing method
         # signatures.
@@ -256,19 +336,33 @@ class Library(Document):
 
     # TODO(mrry): This is a workaround for documenting signature of
     # functions that have the @contextlib.contextmanager decorator.
+    # TODO(aselle): This workaround is brittle on TestCase.__call__
+    #  so we need to wrap this in a try/catch
     # We should do something better.
-    if argspec.varargs == "args" and argspec.keywords == "kwds":
-      original_func = func.__closure__[0].cell_contents
-      return self._generate_signature_for_function(original_func)
+    if argspec_varargs == "args" and argspec_keywords == "kwds":
+      try:
+        original_func = func.__closure__[0].cell_contents
+        return self._generate_signature_for_function(original_func)
+      except TypeError:
+        pass
 
-    if argspec.defaults:
+    if argspec_defaults:
       for arg, default in zip(
-          argspec.args[first_arg_with_default:], argspec.defaults):
-        args_list.append("%s=%r" % (arg, default))
-    if argspec.varargs:
-      args_list.append("*" + argspec.varargs)
-    if argspec.keywords:
-      args_list.append("**" + argspec.keywords)
+          argspec_args[first_arg_with_default:], argspec_defaults):
+        if callable(default):
+          if hasattr(default, "__name__"):
+            args_list.append("%s=%s" % (arg, default.__name__))
+          else:
+            # A callable may be a class instance.
+            # TODO(fchollet): handle case with non-default constructor
+            # arguments (currently not present in the TF codebase).
+            args_list.append("%s=%s()" % (arg, default.__class__.__name__))
+        else:
+          args_list.append("%s=%r" % (arg, default))
+    if argspec_varargs:
+      args_list.append("*" + argspec_varargs)
+    if argspec_keywords:
+      args_list.append("**" + argspec_keywords)
     return "(" + ", ".join(args_list) + ")"
 
   def _remove_docstring_indent(self, docstring):
@@ -361,7 +455,7 @@ class Library(Document):
     heading = prefix + " `" + fullname
     if not isinstance(func, property):
       heading += self._generate_signature_for_function(func)
-    heading += "` {#%s}" % _get_anchor(self._module_to_name, fullname)
+    heading += "` {#%s}" % get_anchor(self._module_to_name, fullname)
     print(heading, file=f)
     print("", file=f)
     self._print_formatted_docstring(inspect.getdoc(func), f)
@@ -369,21 +463,36 @@ class Library(Document):
 
   def _write_member_markdown_to_file(self, f, prefix, name, member):
     """Print `member` to `f`."""
-    if (inspect.isfunction(member) or inspect.ismethod(member) or
-        isinstance(member, property)):
+    if (inspect.isfunction(member) or inspect.ismethod(member)
+        or (isinstance(member, functools.partial)
+            and inspect.isfunction(member.func))
+        or isinstance(member, property)):
       print("- - -", file=f)
       print("", file=f)
       self._print_function(f, prefix, name, member)
       print("", file=f)
-    elif inspect.isclass(member):
+
+      # Write an individual file for each function.
+      if inspect.isfunction(member):
+        indivf = open(
+            os.path.join(self.shard_dir(name), name + ".md"), "w+")
+        self._print_function(indivf, prefix, name, member)
+    elif (inspect.isclass(member)
+          or (isinstance(member, functools.partial)
+              and inspect.isclass(member.func))):
       print("- - -", file=f)
       print("", file=f)
       print("%s `class %s` {#%s}" % (prefix, name,
-                                     _get_anchor(self._module_to_name, name)),
+                                     get_anchor(self._module_to_name, name)),
             file=f)
       print("", file=f)
       self._write_class_markdown_to_file(f, name, member)
       print("", file=f)
+
+      # Write an individual file for each class.
+      indivf = open(
+          os.path.join(self.shard_dir(name), name + ".md"), "w+")
+      self._write_class_markdown_to_file(indivf, name, member)
     else:
       raise RuntimeError("Member %s has unknown type %s" % (name, type(member)))
 
@@ -400,18 +509,18 @@ class Library(Document):
         elif name in imports:
           self._write_module_markdown_to_file(f, imports[name])
         else:
-          raise ValueError("%s: unknown member `%s`" % (self._title, name))
+          raise ValueError("%s: unknown member `%s`, markdown=`%s`." % (
+              self._title, name, l))
       else:
         print(l, file=f)
 
   def _write_class_markdown_to_file(self, f, name, cls):
-    """Write the class doc to 'f'.
+    """Write the class doc to `f`.
 
     Args:
       f: File to write to.
-      prefix: Prefix for names.
-      cls: class object.
       name: name to use.
+      cls: class object.
     """
     # Build the list of class methods to document.
     methods = dict(self.get_class_members(name, cls))
@@ -478,6 +587,9 @@ class Library(Document):
       names = self._members.items()
     else:
       names = inspect.getmembers(self._module)
+      all_names = getattr(self._module, "__all__", None)
+      if all_names is not None:
+        names = [(n, m) for n, m in names if n in all_names]
     leftovers = []
     for name, _ in names:
       if name in self._members and name not in self._documented:
@@ -494,7 +606,7 @@ class Library(Document):
   def assert_no_leftovers(self):
     """Generate an error if there are leftover members."""
     leftovers = []
-    for name in self._members.keys():
+    for name in self._members:
       if name in self._members and name not in self._documented:
         leftovers.append(name)
     if leftovers:
@@ -502,16 +614,30 @@ class Library(Document):
                          (self._title, ", ".join(leftovers)))
 
 
-def write_libraries(dir, libraries):
+def write_libraries(output_dir, libraries):
   """Write a list of libraries to disk.
 
   Args:
-    dir: Output directory.
+    output_dir: Output directory.
     libraries: List of (filename, library) pairs.
   """
-  files = [open(os.path.join(dir, k), "w") for k, _ in libraries]
+  files = [open(os.path.join(output_dir, k), "w") for k, _ in libraries]
+
+  # Set the directory in which to save individual class and function md files,
+  # creating it if it doesn't exist. Create subdirectories to avoid hitting
+  # the limit for number of files in a directory.
+  indiv_dir = os.path.join(output_dir, _indiv_dir)
+  if not os.path.exists(indiv_dir):
+    os.makedirs(indiv_dir)
+
+  for i in range(0, _num_subdirs):
+    subdir = os.path.join(indiv_dir, _subdir_prefix + str(i))
+    if not os.path.exists(subdir):
+      os.makedirs(subdir)
+
   # Document mentioned symbols for all libraries
   for f, (_, v) in zip(files, libraries):
+    v.set_functions_and_classes_dir(indiv_dir)
     v.write_markdown_to_file(f)
   # Document symbols that no library mentioned.  We do this after writing
   # out all libraries so that earlier libraries know what later libraries

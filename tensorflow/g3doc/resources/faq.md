@@ -10,10 +10,10 @@ answer on one of the TensorFlow [community resources](../resources/index.md).
 
 #### Can I run distributed training on multiple computers?
 
-The initial open-source release of TensorFlow supports multiple devices (CPUs
-and GPUs) in a single computer. We are actively working on an open-source
-multi-machine version, and plan to release it as soon as it's ready. You can
-follow progress at the [GitHub issue](https://github.com/tensorflow/tensorflow/issues/23).
+Yes! TensorFlow gained
+[support for distributed computation](../how_tos/distributed/index.md) in
+version 0.8. TensorFlow now supports multiple devices (CPUs and GPUs) in one or
+more computers.
 
 #### Does TensorFlow work with Python 3?
 
@@ -105,11 +105,12 @@ In the second example, the session acts as a
 which has the effect of installing it as the default session for the lifetime of
 the `with` block. The context manager approach can lead to more concise code for
 simple use cases (like unit tests); if your code deals with multiple graphs and
-sessions, it may be more straightforward to explicit calls to `Session.run()`.
+sessions, it may be more straightforward to make explicit calls to
+`Session.run()`.
 
 #### Do Sessions have a lifetime? What about intermediate tensors?
 
-Sessions can own resources, such
+Sessions can own resources, such as
 [variables](../api_docs/python/state_ops.md#Variable),
 [queues](../api_docs/python/io_ops.md#QueueBase), and
 [readers](../api_docs/python/io_ops.md#ReaderBase); and these resources can use
@@ -146,7 +147,7 @@ graphs and running steps; we also have an experimental API for
 
 We would like to support more client languages, as determined by community
 interest. TensorFlow has a
-[C-based client API](https://www.tensorflow.org/code/tensorflow/core/public/tensor_c_api.h)
+[C-based client API](https://www.tensorflow.org/code/tensorflow/c/c_api.h)
 that makes it easy to build a client in many different languages. We invite
 contributions of new language bindings.
 
@@ -189,9 +190,9 @@ operation for that variable in a session. It is destroyed when that
 #### How do variables behave when they are concurrently accessed?
 
 Variables allow concurrent read and write operations. The value read from a
-variable may change it is concurrently updated. By default, concurrent assigment
-operations to a variable are allowed to run with no mutual exclusion. To acquire
-a lock when assigning to a variable, pass `use_locking=True` to
+variable may change if it is concurrently updated. By default, concurrent
+assigment operations to a variable are allowed to run with no mutual exclusion.
+To acquire a lock when assigning to a variable, pass `use_locking=True` to
 [`Variable.assign()`](../api_docs/python/state_ops.md#Variable.assign).
 
 ## Tensor shapes
@@ -260,8 +261,8 @@ these summaries to a log directory.  Then, start TensorBoard using
 
     python tensorflow/tensorboard/tensorboard.py --logdir=path/to/log-directory
 
-For more details, see the [Summaries and TensorBoard tutorial]
-(../how_tos/summaries_and_tensorboard/index.md).
+For more details, see the
+[Summaries and TensorBoard tutorial](../how_tos/summaries_and_tensorboard/index.md).
 
 #### Every time I launch TensorBoard, I get a network security popup!
 
@@ -278,9 +279,9 @@ See also the how-to documentation for
 There are two main options for dealing with data in a custom format.
 
 The easier option is to write parsing code in Python that transforms the data
-into a numpy array, then feed a [`tf.placeholder()`]
-(../api_docs/python/io_ops.md#placeholder) a tensor with that data. See the
-documentation on
+into a numpy array, then feed a
+[`tf.placeholder()`](../api_docs/python/io_ops.md#placeholder) a tensor with
+that data. See the documentation on
 [using placeholders for input](../how_tos/reading_data/index.md#feeding) for
 more details. This approach is easy to get up and running, but the parsing can
 be a performance bottleneck.
@@ -316,3 +317,4 @@ The TensorFlow C++ code base adheres to the
 
 (<sup>*</sup> With one exception: we use 2-space indentation instead of 4-space
 indentation.)
+

@@ -1,4 +1,4 @@
-/* Copyright 2015 Google Inc. All Rights Reserved.
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -93,7 +93,7 @@ class CUDABlas : public blas::BlasSupport {
       const port::ArraySlice<DeviceMemory<T> *> &a_array, int lda,
       const port::ArraySlice<DeviceMemory<T> *> &b_array, int ldb, T beta,
       const port::ArraySlice<DeviceMemory<T> *> &c_array, int ldc,
-      int batch_count);
+      int batch_count, ScratchAllocator *scratch_allocator);
 
   // mutex that guards the cuBLAS handle for this device.
   mutex mu_;

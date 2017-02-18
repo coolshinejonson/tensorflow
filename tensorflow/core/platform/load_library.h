@@ -1,4 +1,4 @@
-/* Copyright 2015 Google Inc. All Rights Reserved.
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ limitations under the License.
 #ifndef TENSORFLOW_PLATFORM_LOAD_LIBRARY_H_
 #define TENSORFLOW_PLATFORM_LOAD_LIBRARY_H_
 
-#include "tensorflow/core/public/status.h"
+#include "tensorflow/core/lib/core/status.h"
 
 namespace tensorflow {
 
@@ -25,6 +25,7 @@ namespace internal {
 Status LoadLibrary(const char* library_filename, void** handle);
 Status GetSymbolFromLibrary(void* handle, const char* symbol_name,
                             void** symbol);
+string FormatLibraryFileName(const string& name, const string& version);
 
 }  // namespace internal
 

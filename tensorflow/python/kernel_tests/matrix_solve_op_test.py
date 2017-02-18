@@ -1,4 +1,4 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,87 +12,95 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-
 """Tests for tensorflow.ops.math_ops.matrix_solve."""
-# pylint: disable=unused-import,g-bad-import-order
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import tensorflow.python.platform
-
 import numpy as np
-import tensorflow as tf
 
-# pylint: enable=unused-import,g-bad-import-order
+from tensorflow.python.framework import constant_op
+from tensorflow.python.ops import linalg_ops
+from tensorflow.python.platform import test
 
 
-class MatrixSolveOpTest(tf.test.TestCase):
+class MatrixSolveOpTest(test.TestCase):
 
-  def _verifySolve(self, x, y):
-    for np_type in [np.float32, np.float64]:
-      a = x.astype(np_type)
-      b = y.astype(np_type)
-      with self.test_session():
-        if a.ndim == 2:
-          tf_ans = tf.matrix_solve(a, b)
+  def _verifySolve(self, x, y, batch_dims=None):
+    for adjoint in False, True:
+      for np_type in [np.float32, np.float64, np.complex64, np.complex128]:
+        if np_type is [np.float32, np.float64]:
+          a = x.real().astype(np_type)
+          b = y.real().astype(np_type)
         else:
-          tf_ans = tf.batch_matrix_solve(a, b)
-        out = tf_ans.eval()
-      np_ans = np.linalg.solve(a, b)
-      self.assertEqual(np_ans.shape, out.shape)
-      self.assertAllClose(np_ans, out)
+          a = x.astype(np_type)
+          b = y.astype(np_type)
+        if adjoint:
+          a_np = np.conj(np.transpose(a))
+        else:
+          a_np = a
+        if batch_dims is not None:
+          a = np.tile(a, batch_dims + [1, 1])
+          a_np = np.tile(a_np, batch_dims + [1, 1])
+          b = np.tile(b, batch_dims + [1, 1])
 
-  def testBasic(self):
-    # 2x2 matrices, 2x1 right-hand side.
-    matrix0 = np.array([[1., 2.], [3., 4.]])
-    rhs0 = np.array([[1.], [1.]])
-    self._verifySolve(matrix0, rhs0)
+        np_ans = np.linalg.solve(a_np, b)
+        with self.test_session():
+          tf_ans = linalg_ops.matrix_solve(a, b, adjoint=adjoint)
+          out = tf_ans.eval()
+          self.assertEqual(tf_ans.get_shape(), out.shape)
+          self.assertEqual(np_ans.shape, out.shape)
+          self.assertAllClose(np_ans, out)
 
-    # 2x2 matrices, 2x3 right-hand sides.
-    matrix1 = np.array([[1., 2.], [3., 4.]])
-    matrix2 = np.array([[1., 3.], [3., 5.]])
-    rhs1 = np.array([[1., 0., 1.], [0., 1., 1.]])
-    rhs2 = np.array([[1., 1., 1.], [2., 2., 2.]])
-    self._verifySolve(matrix1, rhs1)
-    self._verifySolve(matrix2, rhs2)
-    # A multidimensional batch of 2x2 matrices and 2x3 right-hand sides.
-    matrix_batch = np.concatenate([np.expand_dims(matrix1, 0), np.expand_dims(
-        matrix2, 0)])
-    matrix_batch = np.tile(matrix_batch, [2, 3, 1, 1])
-    rhs_batch = np.concatenate([np.expand_dims(rhs1, 0), np.expand_dims(rhs2, 0)
-                               ])
-    rhs_batch = np.tile(rhs_batch, [2, 3, 1, 1])
-    self._verifySolve(matrix_batch, rhs_batch)
+  def testSolve(self):
+    matrix = np.array([[1. + 5.j, 2. + 6.j], [3. + 7j, 4. + 8.j]])
+    # 2x1 right-hand side.
+    rhs1 = np.array([[1. + 0.j], [1. + 0.j]])
+    self._verifySolve(matrix, rhs1)
+    # 2x3 right-hand sides.
+    rhs3 = np.array(
+        [[1. + 0.j, 0. + 0.j, 1. + 0.j], [0. + 0.j, 1. + 0.j, 1. + 0.j]])
+    self._verifySolve(matrix, rhs3)
+
+  def testSolveBatch(self):
+    matrix = np.array([[1. + 5.j, 2. + 6.j], [3. + 7j, 4. + 8.j]])
+    rhs = np.array([[1. + 0.j], [1. + 0.j]])
+    # Batch of 2x3x2x2 matrices, 2x3x2x3 right-hand sides.
+    self._verifySolve(matrix, rhs, batch_dims=[2, 3])
+    # Batch of 3x2x2x2 matrices, 3x2x2x3 right-hand sides.
+    self._verifySolve(matrix, rhs, batch_dims=[3, 2])
 
   def testNonSquareMatrix(self):
     # When the solve of a non-square matrix is attempted we should return
     # an error
     with self.test_session():
       with self.assertRaises(ValueError):
-        matrix = tf.constant([[1., 2., 3.], [3., 4., 5.]])
-        tf.matrix_solve(matrix, matrix)
+        matrix = constant_op.constant([[1., 2., 3.], [3., 4., 5.]])
+        linalg_ops.matrix_solve(matrix, matrix)
 
   def testWrongDimensions(self):
     # The matrix and right-hand sides should have the same number of rows.
     with self.test_session():
-      matrix = tf.constant([[1., 0.], [0., 1.]])
-      rhs = tf.constant([[1., 0.]])
+      matrix = constant_op.constant([[1., 0.], [0., 1.]])
+      rhs = constant_op.constant([[1., 0.]])
       with self.assertRaises(ValueError):
-        tf.matrix_solve(matrix, rhs)
+        linalg_ops.matrix_solve(matrix, rhs)
 
   def testNotInvertible(self):
     # The input should be invertible.
     with self.test_session():
       with self.assertRaisesOpError("Input matrix is not invertible."):
         # All rows of the matrix below add to zero
-        matrix = tf.constant([[1., 0., -1.], [-1., 1., 0.], [0., -1., 1.]])
-        tf.matrix_solve(matrix, matrix).eval()
+        matrix = constant_op.constant(
+            [[1., 0., -1.], [-1., 1., 0.], [0., -1., 1.]])
+        linalg_ops.matrix_solve(matrix, matrix).eval()
 
   def testEmpty(self):
-    self._verifySolve(np.empty([0, 2, 2]), np.empty([0, 2, 2]))
-    self._verifySolve(np.empty([2, 0, 0]), np.empty([2, 0, 0]))
+    with self.test_session():
+      self._verifySolve(np.empty([0, 0]), np.empty([0, 0]))
+      self._verifySolve(np.empty([2, 2]), np.empty([2, 0]))
 
 
 if __name__ == "__main__":
-  tf.test.main()
+  test.main()

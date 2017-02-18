@@ -1,4 +1,4 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,22 +14,23 @@
 # ==============================================================================
 
 from __future__ import absolute_import
+from __future__ import division
 from __future__ import print_function
-
-import tensorflow.python.platform
 
 import collections
 import math
-import numpy as np
 import os
 import random
+import zipfile
+
+import numpy as np
 from six.moves import urllib
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
-import zipfile
 
 # Step 1: Download the data.
 url = 'http://mattmahoney.net/dc/'
+
 
 def maybe_download(filename, expected_bytes):
   """Download a file if not present, and make sure it's the right size."""
@@ -47,18 +48,19 @@ def maybe_download(filename, expected_bytes):
 filename = maybe_download('text8.zip', 31344016)
 
 
-# Read the data into a string.
+# Read the data into a list of strings.
 def read_data(filename):
-  f = zipfile.ZipFile(filename)
-  for name in f.namelist():
-    return f.read(name).split()
-  f.close()
+  """Extract the first file enclosed in a zip file as a list of words"""
+  with zipfile.ZipFile(filename) as f:
+    data = tf.compat.as_str(f.read(f.namelist()[0])).split()
+  return data
 
 words = read_data(filename)
 print('Data size', len(words))
 
 # Step 2: Build the dictionary and replace rare words with UNK token.
 vocabulary_size = 50000
+
 
 def build_dataset(words):
   count = [['UNK', -1]]
@@ -82,7 +84,7 @@ def build_dataset(words):
 data, count, dictionary, reverse_dictionary = build_dataset(words)
 del words  # Hint to reduce memory.
 print('Most common words (+UNK)', count[:5])
-print('Sample data', data[:10])
+print('Sample data', data[:10], [reverse_dictionary[i] for i in data[:10]])
 
 data_index = 0
 
@@ -94,14 +96,14 @@ def generate_batch(batch_size, num_skips, skip_window):
   assert num_skips <= 2 * skip_window
   batch = np.ndarray(shape=(batch_size), dtype=np.int32)
   labels = np.ndarray(shape=(batch_size, 1), dtype=np.int32)
-  span = 2 * skip_window + 1 # [ skip_window target skip_window ]
+  span = 2 * skip_window + 1  # [ skip_window target skip_window ]
   buffer = collections.deque(maxlen=span)
   for _ in range(span):
     buffer.append(data[data_index])
     data_index = (data_index + 1) % len(data)
   for i in range(batch_size // num_skips):
     target = skip_window  # target label at the center of the buffer
-    targets_to_avoid = [ skip_window ]
+    targets_to_avoid = [skip_window]
     for j in range(num_skips):
       while target in targets_to_avoid:
         target = random.randint(0, span - 1)
@@ -114,8 +116,8 @@ def generate_batch(batch_size, num_skips, skip_window):
 
 batch, labels = generate_batch(batch_size=8, num_skips=2, skip_window=1)
 for i in range(8):
-  print(batch[i], '->', labels[i, 0])
-  print(reverse_dictionary[batch[i]], '->', reverse_dictionary[labels[i, 0]])
+  print(batch[i], reverse_dictionary[batch[i]],
+        '->', labels[i, 0], reverse_dictionary[labels[i, 0]])
 
 # Step 4: Build and train a skip-gram model.
 
@@ -129,7 +131,7 @@ num_skips = 2         # How many times to reuse an input to generate a label.
 # construction are also the most frequent.
 valid_size = 16     # Random set of words to evaluate similarity on.
 valid_window = 100  # Only pick dev samples in the head of the distribution.
-valid_examples = np.array(random.sample(np.arange(valid_window), valid_size))
+valid_examples = np.random.choice(valid_window, valid_size, replace=False)
 num_sampled = 64    # Number of negative examples to sample.
 
 graph = tf.Graph()
@@ -158,8 +160,12 @@ with graph.as_default():
   # tf.nce_loss automatically draws a new sample of the negative labels each
   # time we evaluate the loss.
   loss = tf.reduce_mean(
-      tf.nn.nce_loss(nce_weights, nce_biases, embed, train_labels,
-                     num_sampled, vocabulary_size))
+      tf.nn.nce_loss(weights=nce_weights,
+                     biases=nce_biases,
+                     labels=train_labels,
+                     inputs=embed,
+                     num_sampled=num_sampled,
+                     num_classes=vocabulary_size))
 
   # Construct the SGD optimizer using a learning rate of 1.0.
   optimizer = tf.train.GradientDescentOptimizer(1.0).minimize(loss)
@@ -172,19 +178,22 @@ with graph.as_default():
   similarity = tf.matmul(
       valid_embeddings, normalized_embeddings, transpose_b=True)
 
+  # Add variable initializer.
+  init = tf.global_variables_initializer()
+
 # Step 5: Begin training.
 num_steps = 100001
 
 with tf.Session(graph=graph) as session:
   # We must initialize all variables before we use them.
-  tf.initialize_all_variables().run()
+  init.run()
   print("Initialized")
 
   average_loss = 0
   for step in xrange(num_steps):
     batch_inputs, batch_labels = generate_batch(
         batch_size, num_skips, skip_window)
-    feed_dict = {train_inputs : batch_inputs, train_labels : batch_labels}
+    feed_dict = {train_inputs: batch_inputs, train_labels: batch_labels}
 
     # We perform one update step by evaluating the optimizer op (including it
     # in the list of returned values for session.run()
@@ -203,8 +212,8 @@ with tf.Session(graph=graph) as session:
       sim = similarity.eval()
       for i in xrange(valid_size):
         valid_word = reverse_dictionary[valid_examples[i]]
-        top_k = 8 # number of nearest neighbors
-        nearest = (-sim[i, :]).argsort()[1:top_k+1]
+        top_k = 8  # number of nearest neighbors
+        nearest = (-sim[i, :]).argsort()[1:top_k + 1]
         log_str = "Nearest to %s:" % valid_word
         for k in xrange(top_k):
           close_word = reverse_dictionary[nearest[k]]
@@ -214,11 +223,12 @@ with tf.Session(graph=graph) as session:
 
 # Step 6: Visualize the embeddings.
 
+
 def plot_with_labels(low_dim_embs, labels, filename='tsne.png'):
   assert low_dim_embs.shape[0] >= len(labels), "More labels than embeddings"
-  plt.figure(figsize=(18, 18))  #in inches
+  plt.figure(figsize=(18, 18))  # in inches
   for i, label in enumerate(labels):
-    x, y = low_dim_embs[i,:]
+    x, y = low_dim_embs[i, :]
     plt.scatter(x, y)
     plt.annotate(label,
                  xy=(x, y),
@@ -235,9 +245,9 @@ try:
 
   tsne = TSNE(perplexity=30, n_components=2, init='pca', n_iter=5000)
   plot_only = 500
-  low_dim_embs = tsne.fit_transform(final_embeddings[:plot_only,:])
+  low_dim_embs = tsne.fit_transform(final_embeddings[:plot_only, :])
   labels = [reverse_dictionary[i] for i in xrange(plot_only)]
   plot_with_labels(low_dim_embs, labels)
 
 except ImportError:
-  print("Please install sklearn and matplotlib to visualize embeddings.")
+  print("Please install sklearn, matplotlib, and scipy to visualize embeddings.")

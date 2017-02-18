@@ -1,4 +1,4 @@
-/* Copyright 2015 Google Inc. All Rights Reserved.
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,8 +15,15 @@ limitations under the License.
 
 #include "tensorflow/stream_executor/cuda/cuda_gpu_executor.h"
 
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+#if defined(PLATFORM_WINDOWS)
+#include <windows.h>
+#define PATH_MAX MAX_PATH
+#else
 #include <unistd.h>
-
+#endif
 #include "tensorflow/stream_executor/cuda/cuda_diagnostics.h"
 #include "tensorflow/stream_executor/cuda/cuda_driver.h"
 #include "tensorflow/stream_executor/cuda/cuda_event.h"
@@ -111,12 +118,12 @@ static CUdeviceptr AsCudaDevicePtr(DeviceMemoryBase *gpu_mem) {
   return AsCudaDevicePtr(*gpu_mem);
 }
 
-static CUcontext GetCudaContext(Stream *stream) {
+static CudaContext* GetCudaContext(Stream *stream) {
   return static_cast<CUDAExecutor *>(stream->parent()->implementation())
       ->cuda_context();
 }
 
-CUcontext ExtractCudaContext(CUDAExecutor *cuda_exec) {
+CudaContext* ExtractCudaContext(CUDAExecutor *cuda_exec) {
   CHECK(cuda_exec != nullptr);
   return cuda_exec->cuda_context();
 }
@@ -170,7 +177,7 @@ bool CUDAExecutor::FindOnDiskForComputeCapability(
   // have been migrated.
   string cc_specific = port::StrCat(filename.ToString(), ".cc", cc_major_,
                                     cc_minor_, canonical_suffix.ToString());
-  if (port::FileExists(cc_specific)) {
+  if (port::FileExists(cc_specific).ok()) {
     VLOG(2) << "found compute-capability-specific file, using that: "
             << cc_specific;
     *found_filename = cc_specific;
@@ -179,7 +186,7 @@ bool CUDAExecutor::FindOnDiskForComputeCapability(
 
   VLOG(2) << "could not find compute-capability specific file at: "
           << cc_specific;
-  if (port::FileExists(filename.ToString())) {
+  if (port::FileExists(filename.ToString()).ok()) {
     *found_filename = filename.ToString();
     return true;
   }
@@ -194,7 +201,20 @@ bool CUDAExecutor::FindOnDiskForComputeCapability(
 //                 would return /usr/bin.
 static string GetBinaryDir(bool strip_exe) {
   char exe_path[PATH_MAX] = {0};
+#if defined(__APPLE__)
+    uint32_t buffer_size = 0U;
+    _NSGetExecutablePath(nullptr, &buffer_size);
+    char unresolved_path[buffer_size];
+    _NSGetExecutablePath(unresolved_path, &buffer_size);
+    CHECK_ERR(realpath(unresolved_path, exe_path) ? 1 : -1);
+#else
+#if defined(PLATFORM_WINDOWS)
+  HMODULE hModule = GetModuleHandle(NULL);
+  GetModuleFileName(hModule, exe_path, MAX_PATH);
+#else
   CHECK_ERR(readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1));
+#endif
+#endif
   // Make sure it's null-terminated:
   exe_path[sizeof(exe_path) - 1] = 0;
 
@@ -206,15 +226,6 @@ static string GetBinaryDir(bool strip_exe) {
     return port::Join(components, "/");
   }
   return exe_path;
-}
-
-// Returns the location of the runfiles directory.
-// This is the directory which "bazel run" sets as the current working directory
-// before the program starts.
-// N.B. This doesn't have to be running under "bazel run" in order to get the
-// appropriate runfiles directory.
-static string GetRunfilesDir() {
-  return port::StrCat(GetBinaryDir(false), ".runfiles");
 }
 
 bool CUDAExecutor::GetKernel(const MultiKernelLoaderSpec &spec,
@@ -233,6 +244,8 @@ bool CUDAExecutor::GetKernel(const MultiKernelLoaderSpec &spec,
   }
 
   if (on_disk_spec != nullptr) {
+    LOG(WARNING) << "loading CUDA kernel from disk is not supported";
+    return false;
   } else if (spec.has_cuda_ptx_in_memory()) {
     kernelname = &spec.cuda_ptx_in_memory().kernelname();
 
@@ -336,30 +349,11 @@ bool CUDAExecutor::GetKernelMetadata(CUDAKernel *cuda_kernel,
 
 bool CUDAExecutor::Launch(Stream *stream, const ThreadDim &thread_dims,
                           const BlockDim &block_dims, const KernelBase &kernel,
-                          const std::vector<KernelArg> &args) {
-  CHECK_EQ(kernel.Arity(), args.size());
+                          const KernelArgsArrayBase &args) {
+  CHECK_EQ(kernel.Arity(), args.number_of_arguments());
   CUstream custream = AsCUDAStreamValue(stream);
   const CUDAKernel *cuda_kernel = AsCUDAKernel(&kernel);
   CUfunction cufunc = cuda_kernel->AsCUDAFunctionValue();
-
-  std::vector<void *> addrs;
-  addrs.reserve(args.size());
-  int shmem_bytes = 0;
-  for (size_t i = 0; i < args.size(); i++) {
-    switch (args[i].type) {
-      case KernelArg::kNormal:
-        addrs.push_back(const_cast<void *>(
-            static_cast<const void *>(args[i].data.begin())));
-        break;
-      case KernelArg::kSharedMemory:
-        shmem_bytes += args[i].bytes;
-        break;
-      default:
-        LOG(ERROR) << "Invalid kernel arg type passed (" << args[i].type
-                   << ") for arg " << i;
-        return false;
-    }
-  }
 
   // Only perform/print the occupancy check 1x.
   launched_kernels_mu_.lock();
@@ -376,11 +370,15 @@ bool CUDAExecutor::Launch(Stream *stream, const ThreadDim &thread_dims,
     CUDADriver::FuncSetCacheConfig(cufunc, cuda_kernel->GetCUDACacheConfig());
   }
 
-  if (!CUDADriver::LaunchKernel(
-          GetCudaContext(stream), cufunc, block_dims.x, block_dims.y,
-          block_dims.z, thread_dims.x, thread_dims.y, thread_dims.z,
-          shmem_bytes, custream, addrs.data(), nullptr /* = extra */)) {
-    LOG(ERROR) << "failed to launch CUDA kernel with args: " << args.size()
+  void **kernel_params = const_cast<void **>(args.argument_addresses().data());
+
+  if (!CUDADriver::LaunchKernel(GetCudaContext(stream), cufunc, block_dims.x,
+                                block_dims.y, block_dims.z, thread_dims.x,
+                                thread_dims.y, thread_dims.z,
+                                args.number_of_shared_bytes(), custream,
+                                kernel_params, nullptr /* = extra */)) {
+    LOG(ERROR) << "failed to launch CUDA kernel with args: "
+               << args.number_of_arguments()
                << "; thread dim: " << thread_dims.ToString()
                << "; block dim: " << block_dims.ToString();
     return false;
@@ -531,7 +529,22 @@ bool CUDAExecutor::SynchronousMemcpyDeviceToDevice(
 
 bool CUDAExecutor::MemZero(Stream *stream, DeviceMemoryBase *location,
                            uint64 size) {
-  return Memset32(stream, location, 0x0, size);
+  if (reinterpret_cast<uintptr_t>(location->opaque()) % 4 == 0 &&
+      size % 4 == 0) {
+    return Memset32(stream, location, 0x0, size);
+  } else {
+    return Memset(stream, location, 0x0, size);
+  }
+}
+
+bool CUDAExecutor::Memset(Stream *stream, DeviceMemoryBase *location,
+                           uint8 pattern, uint64 size) {
+  VLOG(2) << "enqueueing memset8 operation onto stream " << stream
+          << " at location " << location << " with size " << size
+          << " and pattern " << std::hex << pattern;
+  return CUDADriver::AsynchronousMemsetUint8(
+      context_, AsCudaDevicePtr(location), pattern, size,
+      AsCUDAStreamValue(stream));
 }
 
 bool CUDAExecutor::Memset32(Stream *stream, DeviceMemoryBase *location,
@@ -635,18 +648,10 @@ void CUDAExecutor::DeallocateTimer(Timer *timer) {
 }
 
 bool CUDAExecutor::CreateStreamDependency(Stream *dependent, Stream *other) {
-  CUevent other_completed_event;
-  bool ok =
-      AsCUDAStream(other)->GetOrCreateCompletedEvent(&other_completed_event);
-  if (!ok) {
-    LOG(ERROR) << "failed to get completion event from other; "
-                  "therefore, failed to create inter-stream dependency";
-    return false;
-  }
-
-  ok = CUDADriver::RecordEvent(context_, other_completed_event,
-                               AsCUDAStreamValue(other))
-           .ok();
+  CUevent other_completed_event = *AsCUDAStream(other)->completed_event();
+  bool ok = CUDADriver::RecordEvent(context_, other_completed_event,
+                                    AsCUDAStreamValue(other))
+      .ok();
   if (!ok) {
     LOG(ERROR) << "failed to record completion event; "
                   "therefore, failed to create inter-stream dependency";
@@ -829,18 +834,6 @@ bool CUDAExecutor::FillBlockDimLimit(BlockDim *block_dim_limit) const {
   return true;
 }
 
-KernelArg CUDAExecutor::DeviceMemoryToKernelArg(
-    const DeviceMemoryBase &gpu_mem) const {
-  const void* arg = gpu_mem.opaque();
-  const uint8 *arg_ptr = reinterpret_cast<const uint8 *>(&arg);
-
-  KernelArg kernel_arg;
-  kernel_arg.type = KernelArg::kNormal;
-  kernel_arg.data = port::InlinedVector<uint8, 4>(arg_ptr, arg_ptr + sizeof(arg));
-  kernel_arg.bytes = sizeof(arg);
-  return kernel_arg;
-}
-
 bool CUDAExecutor::SupportsBlas() const { return true; }
 
 bool CUDAExecutor::SupportsFft() const { return true; }
@@ -869,7 +862,7 @@ CUDAExecutor::GetTimerImplementation() {
 
 void *CUDAExecutor::CudaContextHack() { return context_; }
 
-CUcontext CUDAExecutor::cuda_context() { return context_; }
+CudaContext* CUDAExecutor::cuda_context() { return context_; }
 
 // Attemps to read the NUMA node corresponding to the GPU device's PCI bus out
 // of SysFS. Returns -1 if it cannot.
@@ -877,6 +870,13 @@ CUcontext CUDAExecutor::cuda_context() { return context_; }
 // For anything more complicated/prod-focused than this, you'll likely want to
 // turn to gsys' topology modeling.
 static int TryToReadNumaNode(const string &pci_bus_id, int device_ordinal) {
+#if defined(__APPLE__)
+  LOG(INFO) << "OS X does not support NUMA - returning NUMA node zero";
+  return 0;
+#elif defined(PLATFORM_WINDOWS)
+  // Windows support for NUMA is not currently implemented. Return node 0.
+  return 0;
+#else
   VLOG(2) << "trying to read NUMA node for device ordinal: " << device_ordinal;
   static const int kUnknownNumaNode = -1;
 
@@ -893,7 +893,8 @@ static int TryToReadNumaNode(const string &pci_bus_id, int device_ordinal) {
   // could use the file::* utilities).
   FILE *file = fopen(filename.c_str(), "r");
   if (file == nullptr) {
-    LOG(ERROR) << "could not open file to read NUMA node: " << filename;
+    LOG(ERROR) << "could not open file to read NUMA node: " << filename
+               << "\nYour kernel may have been built without NUMA support.";
     return kUnknownNumaNode;
   }
 
@@ -909,8 +910,10 @@ static int TryToReadNumaNode(const string &pci_bus_id, int device_ordinal) {
       LOG(INFO) << "successful NUMA node read from SysFS had negative value ("
                 << value << "), but there must be at least one NUMA node"
                             ", so returning NUMA node zero";
+      fclose(file);
       return 0;
     }
+    fclose(file);
     return value;
   }
 
@@ -918,7 +921,9 @@ static int TryToReadNumaNode(const string &pci_bus_id, int device_ordinal) {
       << "could not convert SysFS file contents to integral NUMA node value: "
       << content;
 
+  fclose(file);
   return kUnknownNumaNode;
+#endif
 }
 
 // Set of compute capability specific device parameters that cannot be

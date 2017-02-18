@@ -1,4 +1,4 @@
-/* Copyright 2015 Google Inc. All Rights Reserved.
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,6 +18,23 @@ limitations under the License.
 %{
 #include "tensorflow/python/framework/python_op_gen.h"
 %}
+
+// Input typemap for GetPythonWrappers.
+// Accepts a python object of 'bytes' type, and converts it to
+// a const char* pointer and size_t length. The default typemap
+// going from python bytes to const char* tries to decode the
+// contents from utf-8 to unicode for Python version >= 3, but
+// we want the bytes to be uninterpreted.
+%typemap(in) (const char* op_wrapper_buf, size_t op_wrapper_len) {
+  char* c_string;
+  Py_ssize_t py_size;
+  if (PyBytes_AsStringAndSize($input, &c_string, &py_size) == -1) {
+    SWIG_fail;
+  }
+  $1 = c_string;
+  $2 = static_cast<size_t>(py_size);
+}
+
 
 %ignoreall;
 %unignore tensorflow::GetPythonWrappers;
